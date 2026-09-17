@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Bot, Sparkles, UserCheck, ShieldCheck, Loader2 } from 'lucide-react';
+import { MessageSquare, X, Send, Bot, Sparkles, UserCheck, ShieldCheck, Loader2, ArrowUpRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { playNotificationSound } from '@/lib/audio';
 import { Message } from '@/types/chat';
@@ -32,9 +32,48 @@ export const ChatWidget = () => {
     scrollToBottom();
   }, [messages, isLoading]);
 
+  // Récupérer la session persistée du visiteur local (Sandbox privée)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedId = localStorage.getItem('sedra_chat_conv_id');
+      if (savedId && !savedId.startsWith('local-')) {
+        setConversationId(savedId);
+        supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', savedId)
+          .order('created_at', { ascending: true })
+          .then(({ data }) => {
+            if (data && data.length > 0) {
+              setMessages(data as Message[]);
+            }
+          });
+
+        supabase
+          .from('conversations')
+          .select('status')
+          .eq('id', savedId)
+          .single()
+          .then(({ data }) => {
+            if (data?.status) {
+              setMode(data.status as any);
+            }
+          });
+      }
+    }
+  }, []);
+
   // 1. Initialiser ou récupérer la conversation dans Supabase
   const getOrCreateConversation = async (): Promise<string> => {
     if (conversationId) return conversationId;
+
+    if (typeof window !== 'undefined') {
+      const savedId = localStorage.getItem('sedra_chat_conv_id');
+      if (savedId && !savedId.startsWith('local-')) {
+        setConversationId(savedId);
+        return savedId;
+      }
+    }
 
     try {
       const visitorTag = 'Visiteur #' + Math.floor(1000 + Math.random() * 9000);
@@ -55,6 +94,9 @@ export const ChatWidget = () => {
       }
 
       setConversationId(data.id);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sedra_chat_conv_id', data.id);
+      }
       return data.id;
     } catch (e) {
       const fallbackId = 'local-' + Date.now();
@@ -232,41 +274,39 @@ export const ChatWidget = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans">
-      {/* Bouton Bulle Flottante */}
+    <div className="fixed bottom-6 right-6 z-50">
+      {/* Bouton Flottant (Pill moderne) */}
       {!isOpen && (
         <motion.button
-          onClick={() => setIsOpen(true)}
-          initial={{ scale: 0, opacity: 0 }}
+          initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="relative group flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-4 rounded-full shadow-2xl hover:shadow-indigo-500/25 transition-all duration-300 border border-white/20 cursor-pointer"
+          onClick={() => setIsOpen(true)}
+          className="flex items-center gap-3 px-5 py-3.5 rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white font-medium shadow-2xl shadow-indigo-500/40 hover:shadow-indigo-500/60 border border-white/20 transition-all cursor-pointer group"
         >
           <div className="relative">
-            <Bot className="w-6 h-6 text-white" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-zinc-950 animate-pulse" />
+            <Bot className="w-5 h-5 text-white group-hover:rotate-12 transition-transform" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse ring-2 ring-zinc-950" />
           </div>
-          <span className="text-sm font-medium tracking-wide">
-            Besoin d&apos;aide ? <strong className="font-bold">Chat Live</strong>
-          </span>
+          <span className="text-sm font-sans tracking-tight">Besoin d&apos;aide ? Chat Live</span>
         </motion.button>
       )}
 
-      {/* Fenêtre de Chat Expandable */}
+      {/* Fenêtre de Chat Rétractable */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 30, scale: 0.92 }}
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.92 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="w-[380px] sm:w-[420px] h-[580px] max-h-[85vh] bg-zinc-950/95 backdrop-blur-xl border border-white/15 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white"
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            className="w-[380px] sm:w-[420px] h-[580px] max-h-[85vh] bg-zinc-950/95 border border-white/15 rounded-3xl shadow-2xl backdrop-blur-2xl flex flex-col overflow-hidden ring-1 ring-white/10"
           >
-            {/* Header */}
-            <div className="p-4 bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-950 border-b border-white/10 flex items-center justify-between">
+            {/* Header du Chat */}
+            <div className="p-4 border-b border-white/10 bg-zinc-900/60 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="relative w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
                   {mode === 'human_active' ? (
                     <UserCheck className="w-5 h-5 text-emerald-400" />
                   ) : (
@@ -314,16 +354,37 @@ export const ChatWidget = () => {
             )}
 
             {mode === 'human_requested' && (
-              <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-500/30 flex items-center gap-2 text-xs text-amber-300 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-                <span>Un conseiller a été alerté, connexion en cours...</span>
+              <div className="px-4 py-2 bg-amber-950/40 border-b border-amber-500/30 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+                  <span className="truncate">Alerte conseiller en cours...</span>
+                </div>
+                <a
+                  href={`/admin?conv=${conversationId || ''}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/40 text-amber-200 border border-amber-500/40 text-[11px] font-mono transition-colors shrink-0 flex items-center gap-1"
+                >
+                  <span>Écran Opérateur</span>
+                  <ArrowUpRight className="w-3 h-3" />
+                </a>
               </div>
             )}
 
             {mode === 'human_active' && (
-              <div className="px-4 py-2 bg-emerald-950/40 border-b border-emerald-500/30 flex items-center gap-2 text-xs text-emerald-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Conseiller en ligne. Vous échangez en temps réel.</span>
+              <div className="px-4 py-2 bg-emerald-950/40 border-b border-emerald-500/30 flex items-center justify-between text-xs text-emerald-300">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span>Conseiller en ligne. Échange en temps réel.</span>
+                </div>
+                <a
+                  href={`/admin?conv=${conversationId || ''}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-200 text-[11px] font-mono transition-colors"
+                >
+                  Vue Opérateur ↗
+                </a>
               </div>
             )}
 

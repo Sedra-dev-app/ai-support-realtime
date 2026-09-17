@@ -14,15 +14,109 @@ import {
   Volume2, 
   Sparkles, 
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  RotateCcw,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { playNotificationSound } from '@/lib/audio';
 import { Conversation, Message } from '@/types/chat';
 
+// 3 Conversations réalistes de démonstration (Sandbox Pro)
+const MOCK_DATA: { conversation: Conversation; messages: Message[] }[] = [
+  {
+    conversation: {
+      id: 'mock-1',
+      visitor_name: 'Alexandre M. (Entreprise Lumio)',
+      status: 'closed',
+      created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    },
+    messages: [
+      {
+        id: 'm-1',
+        conversation_id: 'mock-1',
+        sender: 'visitor',
+        content: "Bonjour, nous souhaitons équiper 10 postes de travail avec l'Écran Pro 4K UltraWide 144Hz. Proposez-vous un tarif dégressif ?",
+        created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+      },
+      {
+        id: 'm-2',
+        conversation_id: 'mock-1',
+        sender: 'ai',
+        content: "Bonjour ! Oui, pour les commandes pro à partir de 5 unités, nous appliquons une remise de 15% ainsi que la livraison express 24h offerte sur devis sous 24h.",
+        created_at: new Date(Date.now() - 3600000 * 2 + 5000).toISOString(),
+      },
+      {
+        id: 'm-3',
+        conversation_id: 'mock-1',
+        sender: 'visitor',
+        content: "Parfait, je finalise le bon de commande par virement. Merci pour votre réactivité !",
+        created_at: new Date(Date.now() - 3600000 * 2 + 60000).toISOString(),
+      },
+      {
+        id: 'm-4',
+        conversation_id: 'mock-1',
+        sender: 'agent',
+        content: "C'est noté Alexandre, notre pôle B2B a préparé votre bon de commande. Excellente journée !",
+        created_at: new Date(Date.now() - 3600000 * 2 + 120000).toISOString(),
+      }
+    ]
+  },
+  {
+    conversation: {
+      id: 'mock-2',
+      visitor_name: 'Sophie B. (Studio Design)',
+      status: 'closed',
+      created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    },
+    messages: [
+      {
+        id: 'm-5',
+        conversation_id: 'mock-2',
+        sender: 'visitor',
+        content: "Le Hub 10-en-1 Thunderbolt est-il pleinement compatible avec les puces Apple Silicon M2/M3 et le double affichage étendu ?",
+        created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+      },
+      {
+        id: 'm-6',
+        conversation_id: 'mock-2',
+        sender: 'ai',
+        content: "Oui tout à fait ! Le Hub gère le double affichage 4K 60Hz natif sur Mac M-Series grâce à ses contrôleurs certifiés et son alimentation 100W Pass-Through.",
+        created_at: new Date(Date.now() - 3600000 * 5 + 4000).toISOString(),
+      }
+    ]
+  },
+  {
+    conversation: {
+      id: 'mock-3',
+      visitor_name: 'Karim T. (Développeur Freelance)',
+      status: 'closed',
+      created_at: new Date(Date.now() - 3600000 * 9).toISOString(),
+    },
+    messages: [
+      {
+        id: 'm-7',
+        conversation_id: 'mock-3',
+        sender: 'visitor',
+        content: "Le Clavier Mécanique Sans Fil RGB a-t-il des touches de rechange pour disposition Mac ?",
+        created_at: new Date(Date.now() - 3600000 * 9).toISOString(),
+      },
+      {
+        id: 'm-8',
+        conversation_id: 'mock-3',
+        sender: 'ai',
+        content: "Oui, les touches Option et Commande pour macOS sont incluses dans la boîte avec l'extracteur de switches.",
+        created_at: new Date(Date.now() - 3600000 * 9 + 3000).toISOString(),
+      }
+    ]
+  }
+];
+
 export default function AdminDashboardPage() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>(MOCK_DATA.map((d) => d.conversation));
+  const [userActiveConvId, setUserActiveConvId] = useState<string | null>(null);
+  const [selectedConvId, setSelectedConvId] = useState<string>('mock-1');
   const [messages, setMessages] = useState<Message[]>([]);
   const [replyText, setReplyText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -31,30 +125,63 @@ export default function AdminDashboardPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Charger les conversations existantes
-  const loadConversations = async () => {
-    const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .order('created_at', { ascending: false });
+  // 1. Initialisation : Charger la session de test de l'utilisateur si elle existe
+  const loadUserSession = async () => {
+    let targetConvId: string | null = null;
 
-    if (!error && data) {
-      setConversations(data as Conversation[]);
-      if (data.length > 0 && !selectedConvId) {
-        setSelectedConvId(data[0].id);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      targetConvId = params.get('conv') || localStorage.getItem('sedra_chat_conv_id');
+    }
+
+    if (targetConvId && !targetConvId.startsWith('local-')) {
+      try {
+        const { data, error } = await supabase
+          .from('conversations')
+          .select('*')
+          .eq('id', targetConvId)
+          .single();
+
+        if (data && !error) {
+          const liveConv: Conversation = {
+            ...data,
+            visitor_name: `${data.visitor_name} (Votre Session en Direct)`,
+          };
+
+          setUserActiveConvId(data.id);
+          setSelectedConvId(data.id);
+
+          // Placer la session utilisateur TOUT EN HAUT de la liste
+          setConversations([liveConv, ...MOCK_DATA.map((d) => d.conversation)]);
+          return;
+        }
+      } catch (e) {
+        console.warn('Session introuvable dans Supabase:', e);
       }
     }
+
+    // Si aucune session utilisateur trouvée, afficher les données mockées
+    setConversations(MOCK_DATA.map((d) => d.conversation));
+    setSelectedConvId('mock-1');
   };
 
   useEffect(() => {
-    loadConversations();
+    loadUserSession();
   }, []);
 
-  // 2. Charger les messages de la conversation sélectionnée
+  // 2. Charger les messages selon la conversation sélectionnée
   useEffect(() => {
     if (!selectedConvId) return;
 
-    const loadMessages = async () => {
+    // Si c'est un mock
+    if (selectedConvId.startsWith('mock-')) {
+      const found = MOCK_DATA.find((m) => m.conversation.id === selectedConvId);
+      setMessages(found ? found.messages : []);
+      return;
+    }
+
+    // Si c'est la vraie session utilisateur
+    const loadLiveMessages = async () => {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
@@ -66,42 +193,53 @@ export default function AdminDashboardPage() {
       }
     };
 
-    loadMessages();
+    loadLiveMessages();
   }, [selectedConvId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 3. Écoute globale en Temps Réel (WebSockets Supabase)
+  // 3. Écoute en Temps Réel UNIQUEMENT sur la session de l'utilisateur (Cloisonnement 100% sécurisé)
   useEffect(() => {
+    if (!userActiveConvId) return;
+
     const channel = supabase
-      .channel('admin_global_channel')
+      .channel('admin_user_session_' + userActiveConvId)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversations' },
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          filter: `id=eq.${userActiveConvId}`,
+        },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setConversations((prev) => [payload.new as Conversation, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as Conversation;
-            setConversations((prev) =>
-              prev.map((c) => (c.id === updated.id ? updated : c))
-            );
+          const updated = payload.new as Conversation;
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === updated.id
+                ? { ...updated, visitor_name: `${updated.visitor_name} (Votre Session en Direct)` }
+                : c
+            )
+          );
 
-            // Alerte sonore si un visiteur réclame un humain !
-            if (updated.status === 'human_requested') {
-              if (hasSoundAlert) playNotificationSound('beep');
-            }
+          if (updated.status === 'human_requested' && hasSoundAlert) {
+            playNotificationSound('beep');
           }
         }
       )
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${userActiveConvId}`,
+        },
         (payload) => {
           const newMsg = payload.new as Message;
-          if (newMsg.conversation_id === selectedConvId) {
+          if (selectedConvId === userActiveConvId) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
@@ -114,11 +252,11 @@ export default function AdminDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedConvId, hasSoundAlert]);
+  }, [userActiveConvId, selectedConvId, hasSoundAlert]);
 
-  // 4. Prendre le relais (passer en human_active)
+  // 4. Prendre le relais de l'IA sur la session en direct
   const handleTakeover = async () => {
-    if (!selectedConvId) return;
+    if (!selectedConvId || selectedConvId.startsWith('mock-')) return;
 
     await supabase
       .from('conversations')
@@ -129,7 +267,7 @@ export default function AdminDashboardPage() {
       prev.map((c) => (c.id === selectedConvId ? { ...c, status: 'human_active' } : c))
     );
 
-    // Message système
+    // Message système automatique
     await supabase.from('messages').insert({
       conversation_id: selectedConvId,
       sender: 'agent',
@@ -139,7 +277,7 @@ export default function AdminDashboardPage() {
 
   // 5. Clôturer la conversation
   const handleCloseConversation = async () => {
-    if (!selectedConvId) return;
+    if (!selectedConvId || selectedConvId.startsWith('mock-')) return;
 
     await supabase
       .from('conversations')
@@ -156,6 +294,11 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     if (!replyText.trim() || !selectedConvId || isSending) return;
 
+    if (selectedConvId.startsWith('mock-')) {
+      alert("Ceci est un exemple de conversation archivée. Pour tester l'envoi en direct, utilisez votre propre session en direct (tout en haut) !");
+      return;
+    }
+
     setIsSending(true);
     const content = replyText.trim();
     setReplyText('');
@@ -167,7 +310,6 @@ export default function AdminDashboardPage() {
         content,
       });
 
-      // Si le statut était encore 'human_requested', on le bascule en 'human_active'
       const currentConv = conversations.find((c) => c.id === selectedConvId);
       if (currentConv && currentConv.status !== 'human_active') {
         await supabase
@@ -176,13 +318,23 @@ export default function AdminDashboardPage() {
           .eq('id', selectedConvId);
       }
     } catch (err) {
-      console.error('Erreur envoi:', err);
+      console.error('Erreur envoi réponse:', err);
     } finally {
       setIsSending(false);
     }
   };
 
+  // Réinitialiser la session de test locale
+  const handleResetSession = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sedra_chat_conv_id');
+      window.location.href = '/admin';
+    }
+  };
+
   const currentConv = conversations.find((c) => c.id === selectedConvId);
+  const isSelectedMock = selectedConvId.startsWith('mock-');
+  const isSelectedUser = selectedConvId === userActiveConvId;
 
   const filteredConversations = conversations.filter((c) => {
     if (filter === 'all') return true;
@@ -214,14 +366,25 @@ export default function AdminDashboardPage() {
               <h1 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
                 Centre Opérateur Live — Sedra Support
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-mono border border-emerald-500/20">
-                  Temps Réel Actif
+                  Temps Réel Sécurisé
                 </span>
               </h1>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {userActiveConvId && (
+            <button
+              onClick={handleResetSession}
+              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Effacer la session de test actuelle pour en démarrer une neuve"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Nouveau Test</span>
+            </button>
+          )}
+
           <button
             onClick={() => setHasSoundAlert(!hasSoundAlert)}
             className={`px-3 py-1.5 rounded-lg border text-xs font-mono flex items-center gap-2 transition-colors cursor-pointer ${
@@ -231,11 +394,11 @@ export default function AdminDashboardPage() {
             }`}
           >
             <Volume2 className="w-3.5 h-3.5" />
-            <span>Alertes sonores : {hasSoundAlert ? 'ON' : 'OFF'}</span>
+            <span>Son : {hasSoundAlert ? 'ON' : 'OFF'}</span>
           </button>
 
           <button
-            onClick={loadConversations}
+            onClick={loadUserSession}
             className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
             title="Rafraîchir"
           >
@@ -243,6 +406,25 @@ export default function AdminDashboardPage() {
           </button>
         </div>
       </header>
+
+      {/* Bannière explicative d'isolation Sandbox */}
+      {!userActiveConvId && (
+        <div className="bg-indigo-950/40 border-b border-indigo-500/20 px-6 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-indigo-300">
+            <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span>
+              <strong>Mode Démonstration Pro :</strong> Vous visualisez des exemples de tickets d&apos;entreprise archivés. Pour tester la prise de relais en direct avec vos propres messages :
+            </span>
+          </div>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-white font-medium bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded-full font-mono text-[11px] transition-colors"
+          >
+            Lancer un test sur la boutique
+            <ExternalLink className="w-3 h-3" />
+          </Link>
+        </div>
+      )}
 
       {/* Main Workspace : 2 Colonnes */}
       <div className="flex-1 flex overflow-hidden">
@@ -257,7 +439,7 @@ export default function AdminDashboardPage() {
               {pendingCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-mono animate-pulse flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
-                  {pendingCount} en attente
+                  {pendingCount} alerte !
                 </span>
               )}
             </div>
@@ -305,13 +487,14 @@ export default function AdminDashboardPage() {
           <div className="flex-1 overflow-y-auto divide-y divide-white/5">
             {filteredConversations.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 text-xs font-mono">
-                Aucune conversation trouvée dans cette catégorie.
+                Aucune conversation dans cette catégorie.
               </div>
             ) : (
               filteredConversations.map((c) => {
                 const isSelected = c.id === selectedConvId;
                 const isPending = c.status === 'human_requested';
                 const isActive = c.status === 'human_active';
+                const isUserLive = c.id === userActiveConvId;
 
                 return (
                   <button
@@ -321,22 +504,25 @@ export default function AdminDashboardPage() {
                       isSelected
                         ? 'bg-white/10 border-l-4 border-indigo-500'
                         : isPending
-                        ? 'bg-amber-950/25 hover:bg-amber-950/40 border-l-4 border-amber-400'
+                        ? 'bg-amber-950/30 hover:bg-amber-950/50 border-l-4 border-amber-400 animate-pulse'
+                        : isUserLive
+                        ? 'bg-indigo-950/20 hover:bg-indigo-950/40 border-l-4 border-indigo-400'
                         : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-sm text-white flex items-center gap-2">
+                      <span className="font-semibold text-sm text-white flex items-center gap-1.5 truncate">
+                        {isUserLive && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />}
                         {c.visitor_name}
                       </span>
-                      <span className="text-[10px] text-zinc-400 font-mono">
+                      <span className="text-[10px] text-zinc-400 font-mono shrink-0">
                         {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       {isPending && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md animate-pulse">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md">
                           <AlertTriangle className="w-3 h-3" /> Humain demandé !
                         </span>
                       )}
@@ -352,7 +538,7 @@ export default function AdminDashboardPage() {
                       )}
                       {c.status === 'closed' && (
                         <span className="text-[11px] font-mono text-zinc-500">
-                          Terminée
+                          {c.id.startsWith('mock-') ? 'Archivé (Exemple)' : 'Terminée'}
                         </span>
                       )}
                     </div>
@@ -371,81 +557,90 @@ export default function AdminDashboardPage() {
               <div className="p-4 border-b border-white/10 bg-zinc-900/40 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3">
-                    <h2 className="text-base font-semibold text-white">
+                    <h2 className="text-base font-semibold text-white flex items-center gap-2">
                       {currentConv.visitor_name}
+                      {isSelectedUser && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono">
+                          Live Active
+                        </span>
+                      )}
+                      {isSelectedMock && (
+                        <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 text-xs font-mono">
+                          Démo Archivée
+                        </span>
+                      )}
                     </h2>
                     <span className="text-xs text-zinc-500 font-mono">ID: {currentConv.id.slice(0, 8)}...</span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Démarrée le {new Date(currentConv.created_at).toLocaleDateString()} à {new Date(currentConv.created_at).toLocaleTimeString()}
+                    {isSelectedUser
+                      ? 'Connecté à votre navigateur en direct (WebSockets Supabase)'
+                      : 'Exemple de ticket client résolu'}
                   </p>
                 </div>
 
-                {/* Actions de l'opérateur */}
-                <div className="flex items-center gap-3">
-                  {currentConv.status === 'human_requested' && (
+                <div className="flex items-center gap-2">
+                  {currentConv.status === 'human_requested' && isSelectedUser && (
                     <button
                       onClick={handleTakeover}
-                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all cursor-pointer animate-bounce"
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-semibold flex items-center gap-2 shadow-lg shadow-amber-500/20 animate-pulse transition-all cursor-pointer"
                     >
                       <UserCheck className="w-4 h-4" />
-                      Prendre le relais maintenant
+                      <span>Prendre le relais maintenant</span>
                     </button>
                   )}
 
-                  {currentConv.status === 'ai' && (
-                    <button
-                      onClick={handleTakeover}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs flex items-center gap-2 transition-all cursor-pointer"
-                    >
-                      <UserCheck className="w-4 h-4" />
-                      Intervenir en direct
-                    </button>
-                  )}
-
-                  {currentConv.status !== 'closed' && (
+                  {currentConv.status === 'human_active' && isSelectedUser && (
                     <button
                       onClick={handleCloseConversation}
-                      className="px-3 py-2 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-zinc-300 text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-xs font-medium transition-colors cursor-pointer"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Clôturer
+                      Clôturer le ticket
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Message Feed */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Fil des messages */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-4">
                 {messages.length === 0 ? (
-                  <div className="text-center text-zinc-500 text-sm py-12">
-                    En attente des premiers messages...
+                  <div className="h-full flex flex-col items-center justify-center text-center text-zinc-500 space-y-2">
+                    <MessageSquare className="w-8 h-8 opacity-40" />
+                    <p className="text-sm font-mono">En attente des premiers messages...</p>
                   </div>
                 ) : (
-                  messages.map((m, idx) => {
+                  messages.map((m) => {
                     const isVisitor = m.sender === 'visitor';
-                    const isAi = m.sender === 'ai';
                     const isAgent = m.sender === 'agent';
+                    const isAi = m.sender === 'ai';
 
                     return (
                       <div
-                        key={m.id || idx}
+                        key={m.id}
                         className={`flex flex-col ${isAgent ? 'items-end' : 'items-start'}`}
                       >
-                        <div className="flex items-center gap-2 mb-1 text-[11px] font-mono text-zinc-400">
-                          {isVisitor && <span className="text-indigo-400 font-semibold">{currentConv.visitor_name}</span>}
-                          {isAi && <span className="text-zinc-400 flex items-center gap-1"><Bot className="w-3 h-3 text-indigo-400" /> Nova (IA)</span>}
-                          {isAgent && <span className="text-emerald-400 font-semibold flex items-center gap-1"><UserCheck className="w-3 h-3" /> Vous (Opérateur)</span>}
-                          <span>· {m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''}</span>
+                        <div className="flex items-center gap-2 mb-1 px-1">
+                          <span className="text-[11px] font-medium text-zinc-400 flex items-center gap-1">
+                            {isVisitor && '👤 Client'}
+                            {isAgent && '🧑‍💼 Vous (Opérateur)'}
+                            {isAi && (
+                              <span className="text-indigo-400 flex items-center gap-1">
+                                <Bot className="w-3 h-3" /> Nova IA
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[10px] text-zinc-500 font-mono">
+                            {new Date(m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
 
                         <div
-                          className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                             isAgent
-                              ? 'bg-emerald-600 text-white rounded-br-none shadow-lg'
+                              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/10'
                               : isVisitor
-                              ? 'bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border border-indigo-500/30 text-white rounded-bl-none'
-                              : 'bg-zinc-900 border border-white/10 text-zinc-300 rounded-bl-none'
+                              ? 'bg-zinc-900 border border-white/10 text-zinc-200'
+                              : 'bg-indigo-950/40 border border-indigo-500/30 text-indigo-100'
                           }`}
                         >
                           {m.content}
@@ -457,29 +652,43 @@ export default function AdminDashboardPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input pour répondre au client en temps réel */}
-              <form onSubmit={handleSendReply} className="p-4 border-t border-white/10 bg-zinc-900/60 flex gap-3">
-                <input
-                  type="text"
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Écrivez votre message au visiteur en direct..."
-                  className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                />
-                <button
-                  type="submit"
-                  disabled={!replyText.trim() || isSending}
-                  className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 disabled:hover:bg-emerald-600 text-white font-semibold text-sm flex items-center gap-2 transition-all cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Envoyer en Direct</span>
-                </button>
-              </form>
+              {/* Console de réponse opérateur */}
+              <div className="p-4 border-t border-white/10 bg-zinc-900/50">
+                {isSelectedMock ? (
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-center text-xs text-zinc-400 font-mono flex items-center justify-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-zinc-500" />
+                    <span>Conversation d&apos;exemple archivée. Pour tester l&apos;envoi en direct, sélectionnez votre session active tout en haut.</span>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendReply} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder={
+                        currentConv.status === 'human_requested'
+                          ? 'Cliquez d\'abord sur « Prendre le relais » ou tapez directement votre réponse...'
+                          : 'Tapez votre message au visiteur en direct...'
+                      }
+                      disabled={isSending}
+                      className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-sans"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={!replyText.trim() || isSending}
+                      className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white font-medium flex items-center gap-2 transition-all cursor-pointer shrink-0 shadow-lg shadow-indigo-600/20"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span className="text-xs font-mono uppercase">Répondre</span>
+                    </button>
+                  </form>
+                )}
+              </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 text-sm">
-              <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
-              Sélectionnez une conversation pour afficher le direct.
+            <div className="h-full flex items-center justify-center text-zinc-500 text-sm font-mono">
+              Sélectionnez une conversation dans la liste.
             </div>
           )}
         </main>
@@ -487,3 +696,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+

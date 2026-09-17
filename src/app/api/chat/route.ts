@@ -38,6 +38,7 @@ CONSIGNES STRICTES :
           { role: 'system', content: systemPrompt },
           ...messages,
         ],
+        max_tokens: 300,
         temperature: 0.6,
         stream: true,
       }),
